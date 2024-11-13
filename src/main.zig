@@ -11,7 +11,7 @@ const RenderPass = @import("RenderPass.zig");
 const GraphicsPipeline = @import("GraphicsPipeline.zig");
 const CommandPool = @import("CommandPool.zig");
 const Vertex = @import("Vertex.zig");
-const VertexBuffer = @import("VertexBuffer.zig");
+const Buffer = @import("Buffer.zig");
 
 var gpa: std.mem.Allocator = undefined;
 
@@ -78,10 +78,16 @@ pub fn main() !void {
     );
     defer command_pool.destroy(device.handle, gpa);
 
-    try createVertexBuffer();
+    vertex_buffer = try Buffer.createOnDevice(
+        Vertex,
+        &vertices,
+        c.VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
+        physical_device.mem_properties,
+        device.handle,
+        device.graphics_queue, // Graphics queues implicitly support transfer operations.
+        command_pool.handle,
+    );
     defer vertex_buffer.destroy(device.handle);
-    // vertex_buffer = try VertexBuffer.create(&vertices, device.handle, physical_device.handle);
-    // defer vertex_buffer.destroy(device.handle);
 
     try createSyncObjects();
     defer destroySyncObjects();
@@ -185,7 +191,7 @@ var render_pass: RenderPass = undefined;
 var graphics_pipeline: GraphicsPipeline = undefined;
 var swapchain_frame_buffers: []c.VkFramebuffer = &.{};
 var command_pool: CommandPool = undefined;
-var vertex_buffer: VertexBuffer = undefined;
+var vertex_buffer: Buffer = undefined;
 var image_available_semaphores: [max_frames_in_flight]c.VkSemaphore = undefined;
 var render_finished_semaphores: [max_frames_in_flight]c.VkSemaphore = undefined;
 var in_flight_fences: [max_frames_in_flight]c.VkFence = undefined;
@@ -240,75 +246,6 @@ fn destroyFrameBuffers() void {
         c.vkDestroyFramebuffer(device.handle, frame_buffer, null);
     }
     gpa.free(swapchain_frame_buffers);
-}
-
-fn createVertexBuffer() !void {
-    // @compileLog(@sizeOf(Vertex) * vertices.len);
-    // @compileLog(@sizeOf(@TypeOf(vertices)));
-    const buffer_size: c.VkDeviceSize = @sizeOf(Vertex) * vertices.len;
-    const staging_buffer = try VertexBuffer.create(
-        buffer_size,
-        device.handle,
-        physical_device.mem_properties,
-        c.VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
-        c.VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | c.VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
-    );
-    defer staging_buffer.destroy(device.handle);
-
-    var data: [*]Vertex = undefined;
-    _ = c.vkMapMemory(device.handle, staging_buffer.memory, 0, buffer_size, 0, @ptrCast(&data));
-    @memcpy(data, &vertices);
-    c.vkUnmapMemory(device.handle, staging_buffer.memory);
-
-    vertex_buffer = try VertexBuffer.create(
-        buffer_size,
-        device.handle,
-        physical_device.mem_properties,
-        c.VK_BUFFER_USAGE_TRANSFER_DST_BIT | c.VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
-        c.VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
-    );
-
-    copyBuffer(staging_buffer.handle, vertex_buffer.handle, buffer_size);
-}
-
-fn copyBuffer(src_buffer: c.VkBuffer, dst_buffer: c.VkBuffer, size: c.VkDeviceSize) void {
-    const alloc_info = c.VkCommandBufferAllocateInfo{
-        .sType = c.VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO,
-        .level = c.VK_COMMAND_BUFFER_LEVEL_PRIMARY,
-        .commandPool = command_pool.handle,
-        .commandBufferCount = 1,
-    };
-
-    var command_buffer: c.VkCommandBuffer = undefined;
-    _ = c.vkAllocateCommandBuffers(device.handle, &alloc_info, &command_buffer);
-
-    const begin_info = c.VkCommandBufferBeginInfo{
-        .sType = c.VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
-        .flags = c.VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT,
-    };
-
-    _ = c.vkBeginCommandBuffer(command_buffer, &begin_info);
-
-    const copy_region = c.VkBufferCopy{
-        .srcOffset = 0,
-        .dstOffset = 0,
-        .size = size,
-    };
-
-    c.vkCmdCopyBuffer(command_buffer, src_buffer, dst_buffer, 1, &copy_region);
-
-    _ = c.vkEndCommandBuffer(command_buffer);
-
-    const submit_info = c.VkSubmitInfo{
-        .sType = c.VK_STRUCTURE_TYPE_SUBMIT_INFO,
-        .commandBufferCount = 1,
-        .pCommandBuffers = &command_buffer,
-    };
-
-    _ = c.vkQueueSubmit(device.graphics_queue, 1, &submit_info, @ptrCast(c.VK_NULL_HANDLE));
-    _ = c.vkQueueWaitIdle(device.graphics_queue);
-
-    c.vkFreeCommandBuffers(device.handle, command_pool.handle, 1, &command_buffer);
 }
 
 fn recordCommandBuffer(cmd_buffer: c.VkCommandBuffer, image_index: u32) !void {
