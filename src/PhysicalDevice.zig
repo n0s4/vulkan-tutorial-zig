@@ -8,6 +8,7 @@ const Allocator = std.mem.Allocator;
 handle: c.VkPhysicalDevice,
 queue_families: QueueFamilyIndices,
 swapchain_support: SwapChainSupport,
+mem_properties: c.VkPhysicalDeviceMemoryProperties,
 
 pub const QueueFamilyIndices = struct {
     graphics_index: u32,
@@ -50,10 +51,14 @@ pub fn selectAndCreate(
 
         const indices = try findQueueFamilies(device, surface, allocator) orelse continue;
 
+        var mem_properties: c.VkPhysicalDeviceMemoryProperties = undefined;
+        c.vkGetPhysicalDeviceMemoryProperties(device, &mem_properties);
+
         return PhysicalDevice{
             .handle = device,
             .queue_families = indices,
             .swapchain_support = swapchain_support,
+            .mem_properties = mem_properties,
         };
     }
 

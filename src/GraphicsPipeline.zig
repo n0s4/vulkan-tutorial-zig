@@ -3,6 +3,8 @@ const GraphicsPipeline = @This();
 const std = @import("std");
 const c = @import("c.zig");
 
+const Vertex = @import("Vertex.zig");
+
 handle: c.VkPipeline,
 layout: c.VkPipelineLayout,
 
@@ -32,10 +34,10 @@ pub fn create(device: c.VkDevice, render_pass: c.VkRenderPass, swapchain_extent:
 
     const vertex_input_info = c.VkPipelineVertexInputStateCreateInfo{
         .sType = c.VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO,
-        .vertexBindingDescriptionCount = 0,
-        .pVertexBindingDescriptions = null,
-        .vertexAttributeDescriptionCount = 0,
-        .pVertexAttributeDescriptions = null,
+        .vertexBindingDescriptionCount = 1,
+        .pVertexBindingDescriptions = &Vertex.binding_description,
+        .vertexAttributeDescriptionCount = Vertex.attribute_descriptions.len,
+        .pVertexAttributeDescriptions = &Vertex.attribute_descriptions,
     };
 
     const input_assembly = c.VkPipelineInputAssemblyStateCreateInfo{

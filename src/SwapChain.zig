@@ -111,10 +111,6 @@ pub fn create(
     };
 }
 
-pub fn recreate(swapchain: *SwapChain, device: c.VkDevice, allocator: Allocator) !void {
-    swapchain.destroy(device, allocator);
-}
-
 pub fn destroy(swapchain: SwapChain, device: c.VkDevice, allocator: Allocator) void {
     for (swapchain.image_views) |image_view| {
         c.vkDestroyImageView(device, image_view, null);
