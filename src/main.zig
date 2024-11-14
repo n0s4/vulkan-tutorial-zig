@@ -17,11 +17,14 @@ var gpa: std.mem.Allocator = undefined;
 
 var window: Window = undefined;
 
-const vertices = [3]Vertex{
-    .{ .pos = .{ 0.0, -0.5 }, .color = .{ 1, 0, 0 } },
-    .{ .pos = .{ 0.5, 0.5 }, .color = .{ 0, 1, 0 } },
-    .{ .pos = .{ -0.5, 0.5 }, .color = .{ 0, 0, 1 } },
+const vertices = [4]Vertex{
+    .{ .pos = .{ -0.5, -0.5 }, .color = .{ 1, 0, 0 } },
+    .{ .pos = .{ 0.5, -0.5 }, .color = .{ 0, 1, 0 } },
+    .{ .pos = .{ 0.5, 0.5 }, .color = .{ 0, 0, 1 } },
+    .{ .pos = .{ -0.5, 0.5 }, .color = .{ 1, 1, 1 } },
 };
+
+const indices = [6]u16{ 0, 1, 2, 2, 3, 0 };
 
 pub fn main() !void {
     var gpa_state = std.heap.GeneralPurposeAllocator(.{}).init;
@@ -88,6 +91,17 @@ pub fn main() !void {
         command_pool.handle,
     );
     defer vertex_buffer.destroy(device.handle);
+
+    index_buffer = try Buffer.createOnDevice(
+        u16,
+        &indices,
+        c.VK_BUFFER_USAGE_INDEX_BUFFER_BIT,
+        physical_device.mem_properties,
+        device.handle,
+        device.graphics_queue,
+        command_pool.handle,
+    );
+    defer index_buffer.destroy(device.handle);
 
     try createSyncObjects();
     defer destroySyncObjects();
@@ -192,6 +206,7 @@ var graphics_pipeline: GraphicsPipeline = undefined;
 var swapchain_frame_buffers: []c.VkFramebuffer = &.{};
 var command_pool: CommandPool = undefined;
 var vertex_buffer: Buffer = undefined;
+var index_buffer: Buffer = undefined;
 var image_available_semaphores: [max_frames_in_flight]c.VkSemaphore = undefined;
 var render_finished_semaphores: [max_frames_in_flight]c.VkSemaphore = undefined;
 var in_flight_fences: [max_frames_in_flight]c.VkFence = undefined;
@@ -295,7 +310,9 @@ fn recordCommandBuffer(cmd_buffer: c.VkCommandBuffer, image_index: u32) !void {
 
     c.vkCmdBindVertexBuffers(cmd_buffer, 0, 1, &vertex_buffer.handle, &@as(u64, 0));
 
-    c.vkCmdDraw(cmd_buffer, vertices.len, 1, 0, 0);
+    c.vkCmdBindIndexBuffer(cmd_buffer, index_buffer.handle, 0, c.VK_INDEX_TYPE_UINT16);
+
+    c.vkCmdDrawIndexed(cmd_buffer, indices.len, 1, 0, 0, 0);
 
     c.vkCmdEndRenderPass(cmd_buffer);
 
