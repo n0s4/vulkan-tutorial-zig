@@ -7,7 +7,6 @@ const PhysicalDevice = @import("PhysicalDevice.zig");
 handle: c.VkBuffer,
 memory: c.VkDeviceMemory,
 
-/// Create
 pub fn createOnDevice(
     T: type,
     data: []const T,
@@ -18,7 +17,7 @@ pub fn createOnDevice(
     command_pool: c.VkCommandPool,
 ) !Buffer {
     const size: c.VkDeviceSize = @sizeOf(T) * data.len;
-    const staging_buffer = try createBuffer(
+    const staging_buffer = try create(
         size,
         c.VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
         c.VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | c.VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
@@ -31,7 +30,7 @@ pub fn createOnDevice(
     _ = c.vkMapMemory(device, staging_buffer.memory, 0, size, 0, @ptrCast(&mapped_mem));
     @memcpy(mapped_mem, data);
 
-    const buffer = try createBuffer(
+    const buffer = try create(
         size,
         usage | c.VK_BUFFER_USAGE_TRANSFER_DST_BIT,
         c.VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
@@ -44,7 +43,7 @@ pub fn createOnDevice(
     return buffer;
 }
 
-fn createBuffer(
+pub fn create(
     size: c.VkDeviceSize,
     usage: c.VkBufferUsageFlags,
     properties: c.VkMemoryPropertyFlags,

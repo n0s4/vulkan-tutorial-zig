@@ -14,7 +14,7 @@ pub fn init(frame_buffer_did_resize: *bool) !Window {
 
     c.glfwWindowHint(c.GLFW_CLIENT_API, c.GLFW_NO_API);
 
-    const handle = c.glfwCreateWindow(1920, 1080, "Vulkan Triangle", null, null) orelse {
+    const handle = c.glfwCreateWindow(1920, 1080, "Vulkan", null, null) orelse {
         return error.GLFWCreateWindowFailed;
     };
 
