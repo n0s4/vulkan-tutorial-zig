@@ -59,7 +59,18 @@ var index_buffer: Buffer = undefined;
 var image_available_semaphores: [max_frames_in_flight]c.VkSemaphore = undefined;
 var render_finished_semaphores: [max_frames_in_flight]c.VkSemaphore = undefined;
 var in_flight_fences: [max_frames_in_flight]c.VkFence = undefined;
+var descriptor_pool: c.VkDescriptorPool = undefined;
+var descriptor_set_layout: c.VkDescriptorSetLayout = undefined;
+var descriptor_sets: [max_frames_in_flight]c.VkDescriptorSet = undefined;
+var uniform_buffers: [max_frames_in_flight]Buffer = undefined;
+var uniform_buffers_mapped: [max_frames_in_flight][*]UniformBufferObject = undefined;
 var frame_buffer_did_resize = false;
+
+const UniformBufferObject = struct {
+    model: Matrix,
+    view: Matrix,
+    projection: Matrix,
+};
 
 pub fn main() !void {
     var gpa_state = std.heap.GeneralPurposeAllocator(.{}).init;
@@ -269,57 +280,6 @@ fn updateUniformBuffer(current_image: usize) void {
     @memcpy(uniform_buffers_mapped[current_image], &[_]UniformBufferObject{ubo});
 }
 
-fn recreateSwapChain() !void {
-    var width: c_int = 0;
-    var height: c_int = 0;
-    c.glfwGetFramebufferSize(window.handle, &width, &height);
-    while (width == 0 or height == 0) {
-        c.glfwGetFramebufferSize(window.handle, width, height);
-        c.glfwWaitEvents();
-    }
-    _ = c.vkDeviceWaitIdle(device.handle);
-
-    destroyFrameBuffers();
-
-    swapchain.destroy(device.handle, gpa);
-    swapchain = try SwapChain.create(
-        device.handle,
-        physical_device.queue_families,
-        physical_device.swapchain_support,
-        window,
-        surface,
-        gpa,
-    );
-
-    try createFrameBuffers();
-}
-
-fn createFrameBuffers() !void {
-    swapchain_frame_buffers = try gpa.alloc(c.VkFramebuffer, swapchain.image_views.len);
-
-    for (swapchain.image_views, swapchain_frame_buffers) |image_view, *frame_buffer| {
-        const frame_buffer_info = c.VkFramebufferCreateInfo{
-            .sType = c.VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO,
-            .renderPass = render_pass.handle,
-            .attachmentCount = 1,
-            .pAttachments = &image_view,
-            .width = swapchain.extent.width,
-            .height = swapchain.extent.height,
-            .layers = 1,
-        };
-        if (c.vkCreateFramebuffer(device.handle, &frame_buffer_info, null, frame_buffer) != c.VK_SUCCESS) {
-            return error.VKCreateFrameBufferFailed;
-        }
-    }
-}
-
-fn destroyFrameBuffers() void {
-    for (swapchain_frame_buffers) |frame_buffer| {
-        c.vkDestroyFramebuffer(device.handle, frame_buffer, null);
-    }
-    gpa.free(swapchain_frame_buffers);
-}
-
 fn recordCommandBuffer(cmd_buffer: c.VkCommandBuffer, image_index: u32) !void {
     const begin_info = c.VkCommandBufferBeginInfo{
         .sType = c.VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
@@ -389,6 +349,57 @@ fn recordCommandBuffer(cmd_buffer: c.VkCommandBuffer, image_index: u32) !void {
     }
 }
 
+fn recreateSwapChain() !void {
+    var width: c_int = 0;
+    var height: c_int = 0;
+    c.glfwGetFramebufferSize(window.handle, &width, &height);
+    while (width == 0 or height == 0) {
+        c.glfwGetFramebufferSize(window.handle, width, height);
+        c.glfwWaitEvents();
+    }
+    _ = c.vkDeviceWaitIdle(device.handle);
+
+    destroyFrameBuffers();
+
+    swapchain.destroy(device.handle, gpa);
+    swapchain = try SwapChain.create(
+        device.handle,
+        physical_device.queue_families,
+        physical_device.swapchain_support,
+        window,
+        surface,
+        gpa,
+    );
+
+    try createFrameBuffers();
+}
+
+fn createFrameBuffers() !void {
+    swapchain_frame_buffers = try gpa.alloc(c.VkFramebuffer, swapchain.image_views.len);
+
+    for (swapchain.image_views, swapchain_frame_buffers) |image_view, *frame_buffer| {
+        const frame_buffer_info = c.VkFramebufferCreateInfo{
+            .sType = c.VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO,
+            .renderPass = render_pass.handle,
+            .attachmentCount = 1,
+            .pAttachments = &image_view,
+            .width = swapchain.extent.width,
+            .height = swapchain.extent.height,
+            .layers = 1,
+        };
+        if (c.vkCreateFramebuffer(device.handle, &frame_buffer_info, null, frame_buffer) != c.VK_SUCCESS) {
+            return error.VKCreateFrameBufferFailed;
+        }
+    }
+}
+
+fn destroyFrameBuffers() void {
+    for (swapchain_frame_buffers) |frame_buffer| {
+        c.vkDestroyFramebuffer(device.handle, frame_buffer, null);
+    }
+    gpa.free(swapchain_frame_buffers);
+}
+
 fn createSyncObjects() !void {
     const semaphore_info = c.VkSemaphoreCreateInfo{
         .sType = c.VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO,
@@ -414,37 +425,6 @@ fn destroySyncObjects() void {
     }
 }
 
-const UniformBufferObject = struct {
-    model: Matrix,
-    view: Matrix,
-    projection: Matrix,
-};
-
-var descriptor_set_layout: c.VkDescriptorSetLayout = undefined;
-
-fn createDescriptorSetLayout() !void {
-    const ubo_layout_binding = c.VkDescriptorSetLayoutBinding{
-        .binding = 0,
-        .descriptorType = c.VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
-        .descriptorCount = 1,
-        .stageFlags = c.VK_SHADER_STAGE_VERTEX_BIT,
-        .pImmutableSamplers = null,
-    };
-
-    const layout_info = c.VkDescriptorSetLayoutCreateInfo{
-        .sType = c.VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
-        .bindingCount = 1,
-        .pBindings = &ubo_layout_binding,
-    };
-
-    if (c.vkCreateDescriptorSetLayout(device.handle, &layout_info, null, &descriptor_set_layout) != c.VK_SUCCESS) {
-        return error.VKCreateDescriptorSetLayoutFailed;
-    }
-}
-
-var uniform_buffers: [max_frames_in_flight]Buffer = undefined;
-var uniform_buffers_mapped: [max_frames_in_flight][*]UniformBufferObject = undefined;
-
 fn createUniformBuffers() !void {
     const buffer_size = @sizeOf(UniformBufferObject);
 
@@ -467,7 +447,25 @@ fn destroyUniformBuffers() void {
     }
 }
 
-var descriptor_pool: c.VkDescriptorPool = undefined;
+fn createDescriptorSetLayout() !void {
+    const ubo_layout_binding = c.VkDescriptorSetLayoutBinding{
+        .binding = 0,
+        .descriptorType = c.VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
+        .descriptorCount = 1,
+        .stageFlags = c.VK_SHADER_STAGE_VERTEX_BIT,
+        .pImmutableSamplers = null,
+    };
+
+    const layout_info = c.VkDescriptorSetLayoutCreateInfo{
+        .sType = c.VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
+        .bindingCount = 1,
+        .pBindings = &ubo_layout_binding,
+    };
+
+    if (c.vkCreateDescriptorSetLayout(device.handle, &layout_info, null, &descriptor_set_layout) != c.VK_SUCCESS) {
+        return error.VKCreateDescriptorSetLayoutFailed;
+    }
+}
 
 fn createDescriptorPool() !void {
     const pool_size = c.VkDescriptorPoolSize{
@@ -486,8 +484,6 @@ fn createDescriptorPool() !void {
         return error.VKCreateDescriptorPoolFailed;
     }
 }
-
-var descriptor_sets: [max_frames_in_flight]c.VkDescriptorSet = undefined;
 
 fn createDescriptorSets() !void {
     const layouts = [_]c.VkDescriptorSetLayout{descriptor_set_layout} ** max_frames_in_flight;
