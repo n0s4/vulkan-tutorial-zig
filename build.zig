@@ -4,6 +4,17 @@ pub fn build(b: *std.Build) void {
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
 
+    const exe_check = b.addExecutable(.{
+        .name = "vulkan",
+        .root_source_file = b.path("src/main.zig"),
+        .target = target,
+        .optimize = optimize,
+        .link_libc = true,
+    });
+
+    const check = b.step("check", "Check for compilation errors");
+    check.dependOn(&exe_check.step);
+
     const exe = b.addExecutable(.{
         .name = "vulkan",
         .root_source_file = b.path("src/main.zig"),
@@ -15,10 +26,18 @@ pub fn build(b: *std.Build) void {
     exe.linkSystemLibrary("glfw");
     exe.linkSystemLibrary("vulkan");
 
-    b.installArtifact(exe);
+    exe.addIncludePath(b.path("stb_image"));
+    exe.addCSourceFile(.{ .file = b.path("stb_image/stub.c") });
+
+    exe.root_module.addAnonymousImport(
+        "texture.jpg",
+        .{ .root_source_file = b.path("assets/texture.jpg") },
+    );
 
     const shader_step = createShaderStep(b);
     exe.step.dependOn(shader_step);
+
+    b.installArtifact(exe);
 
     const run_cmd = b.addRunArtifact(exe);
     run_cmd.step.dependOn(b.getInstallStep());

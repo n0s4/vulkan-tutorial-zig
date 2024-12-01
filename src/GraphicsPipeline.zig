@@ -11,7 +11,7 @@ layout: c.VkPipelineLayout,
 pub fn create(
     device: c.VkDevice,
     render_pass: c.VkRenderPass,
-    descriptor_set_layout: *c.VkDescriptorSetLayout,
+    descriptor_set_layout: c.VkDescriptorSetLayout,
     swapchain_extent: c.VkExtent2D,
 ) !GraphicsPipeline {
     const vert_shader_code align(@alignOf(u32)) = @embedFile("shaders/compiled/vert.spv").*;
@@ -119,7 +119,7 @@ pub fn create(
     const pipeline_layout_info = c.VkPipelineLayoutCreateInfo{
         .sType = c.VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
         .setLayoutCount = 1,
-        .pSetLayouts = descriptor_set_layout,
+        .pSetLayouts = &descriptor_set_layout,
     };
 
     var layout: c.VkPipelineLayout = undefined;

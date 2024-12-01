@@ -7,7 +7,7 @@ const c = @import("c.zig");
 handle: *c.GLFWwindow,
 
 /// Initialize GLFW and create a Window and its Vulkan Surface.
-pub fn init(frame_buffer_did_resize: *bool) !Window {
+pub fn create(frame_buffer_did_resize: *bool) !Window {
     if (c.glfwInit() != c.GLFW_TRUE) {
         return error.GLFWInitFailed;
     }

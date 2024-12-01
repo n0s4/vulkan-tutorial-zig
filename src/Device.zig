@@ -39,7 +39,9 @@ pub fn create(
         });
     }
 
-    const device_features = c.VkPhysicalDeviceFeatures{};
+    const device_features = c.VkPhysicalDeviceFeatures{
+        .samplerAnisotropy = c.VK_TRUE,
+    };
 
     const create_info = c.VkDeviceCreateInfo{
         .sType = c.VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO,

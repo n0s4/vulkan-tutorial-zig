@@ -9,6 +9,7 @@ handle: c.VkPhysicalDevice,
 queue_families: QueueFamilyIndices,
 swapchain_support: SwapChainSupport,
 mem_properties: c.VkPhysicalDeviceMemoryProperties,
+properties: c.VkPhysicalDeviceProperties,
 
 pub const QueueFamilyIndices = struct {
     graphics_index: u32,
@@ -51,18 +52,41 @@ pub fn selectAndCreate(
 
         const indices = try findQueueFamilies(device, surface, allocator) orelse continue;
 
+        var features: c.VkPhysicalDeviceFeatures = undefined;
+        c.vkGetPhysicalDeviceFeatures(device, &features);
+        if (features.samplerAnisotropy == c.VK_FALSE) continue;
+
         var mem_properties: c.VkPhysicalDeviceMemoryProperties = undefined;
         c.vkGetPhysicalDeviceMemoryProperties(device, &mem_properties);
+
+        var properties: c.VkPhysicalDeviceProperties = undefined;
+        c.vkGetPhysicalDeviceProperties(device, &properties);
 
         return PhysicalDevice{
             .handle = device,
             .queue_families = indices,
             .swapchain_support = swapchain_support,
             .mem_properties = mem_properties,
+            .properties = properties,
         };
     }
 
     return error.NoSuitableGPUs;
+}
+
+pub fn findMemoryType(
+    device_properties: c.VkPhysicalDeviceMemoryProperties,
+    type_filter: u32,
+    properties: c.VkMemoryPropertyFlags,
+) ?u32 {
+    for (device_properties.memoryTypes[0..device_properties.memoryTypeCount], 0..) |mem_type, i| {
+        if (((type_filter & (@as(u32, 1) << @intCast(i))) != 0) and
+            (mem_type.propertyFlags & properties) == properties)
+        {
+            return @intCast(i);
+        }
+    }
+    return null;
 }
 
 pub fn deinit(device: PhysicalDevice, allocator: Allocator) void {
