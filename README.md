@@ -4,6 +4,8 @@ Tracking my progress through the [vulkan tutorial](https://docs.vulkan.org/tutor
 
 Currently, I have just completed the "Depth buffering" chapter.
 
+![application screenshot](screenshot.png)
+
 ## Build Instructions
 
 ### Dependencies
