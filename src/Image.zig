@@ -16,7 +16,7 @@ pub fn create(
     usage: c.VkImageUsageFlags,
     properties: c.VkMemoryPropertyFlags,
     device: c.VkDevice,
-    device_properties: c.VkPhysicalDeviceMemoryProperties,
+    device_mem_props: c.VkPhysicalDeviceMemoryProperties,
 ) !Image {
     const image_info = c.VkImageCreateInfo{
         .sType = c.VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO,
@@ -47,7 +47,7 @@ pub fn create(
     const alloc_info = c.VkMemoryAllocateInfo{
         .sType = c.VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO,
         .allocationSize = mem_requirements.size,
-        .memoryTypeIndex = PhysicalDevice.findMemoryType(device_properties, mem_requirements.memoryTypeBits, properties) orelse {
+        .memoryTypeIndex = PhysicalDevice.findMemoryType(device_mem_props, mem_requirements.memoryTypeBits, properties) orelse {
             return error.NoSuitableMemoryType;
         },
     };

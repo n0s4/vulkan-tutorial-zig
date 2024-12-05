@@ -21,14 +21,21 @@ const createImageView = @import("image_view.zig").create;
 
 const Matrix = math.Matrix;
 
-const vertices = [4]Vertex{
-    .{ .pos = .{ -0.5, -0.5 }, .color = .{ 1, 0, 0 }, .tex_coord = .{ 1, 0 } },
-    .{ .pos = .{ 0.5, -0.5 }, .color = .{ 0, 1, 0 }, .tex_coord = .{ 0, 0 } },
-    .{ .pos = .{ 0.5, 0.5 }, .color = .{ 0, 0, 1 }, .tex_coord = .{ 0, 1 } },
-    .{ .pos = .{ -0.5, 0.5 }, .color = .{ 1, 1, 1 }, .tex_coord = .{ 1, 1 } },
+const vertices = [_]Vertex{
+    .{ .pos = .{ -0.5, -0.5, 0 }, .color = .{ 1, 0, 0 }, .tex_coord = .{ 1, 0 } },
+    .{ .pos = .{ 0.5, -0.5, 0 }, .color = .{ 0, 1, 0 }, .tex_coord = .{ 0, 0 } },
+    .{ .pos = .{ 0.5, 0.5, 0 }, .color = .{ 0, 0, 1 }, .tex_coord = .{ 0, 1 } },
+    .{ .pos = .{ -0.5, 0.5, 0 }, .color = .{ 1, 1, 1 }, .tex_coord = .{ 1, 1 } },
+
+    .{ .pos = .{ -0.5, -0.5, -0.5 }, .color = .{ 1, 0, 0 }, .tex_coord = .{ 1, 0 } },
+    .{ .pos = .{ 0.5, -0.5, -0.5 }, .color = .{ 0, 1, 0 }, .tex_coord = .{ 0, 0 } },
+    .{ .pos = .{ 0.5, 0.5, -0.5 }, .color = .{ 0, 0, 1 }, .tex_coord = .{ 0, 1 } },
+    .{ .pos = .{ -0.5, 0.5, -0.5 }, .color = .{ 1, 1, 1 }, .tex_coord = .{ 1, 1 } },
 };
 
-const indices = [6]u16{ 0, 1, 2, 2, 3, 0 };
+const indices =
+    [6]u16{ 0, 1, 2, 2, 3, 0 } ++
+    [6]u16{ 4, 5, 6, 6, 7, 4 };
 
 const max_frames_in_flight = 2;
 
@@ -65,6 +72,9 @@ command_pool: CommandPool,
 texture: Image,
 texture_view: c.VkImageView,
 texture_sampler: c.VkSampler,
+depth_format: c.VkFormat,
+depth_image: Image,
+depth_view: c.VkImageView,
 vertex_buffer: Buffer,
 index_buffer: Buffer,
 image_available_semaphores: [max_frames_in_flight]c.VkSemaphore,
@@ -101,20 +111,25 @@ pub fn init(app: *App, gpa: Allocator) !void {
         surface,
         gpa,
     );
-    const render_pass = try RenderPass.create(device.handle, swapchain.format);
+    const depth_format = PhysicalDevice.findSupportedFormat(
+        physical_device.handle,
+        &.{
+            c.VK_FORMAT_D32_SFLOAT,
+            c.VK_FORMAT_D32_SFLOAT_S8_UINT,
+            c.VK_FORMAT_D24_UNORM_S8_UINT,
+        },
+        c.VK_IMAGE_TILING_OPTIMAL,
+        c.VK_FORMAT_FEATURE_DEPTH_STENCIL_ATTACHMENT_BIT,
+    ) orelse {
+        return error.NoSuitableDepthFormat;
+    };
+    const render_pass = try RenderPass.create(device.handle, swapchain.format, depth_format);
     const descriptor_set_layout = try createDescriptorSetLayout(device.handle);
     const graphics_pipeline = try GraphicsPipeline.create(
         device.handle,
         render_pass.handle,
         descriptor_set_layout,
         swapchain.extent,
-    );
-    const frame_buffers = try createFrameBuffers(
-        swapchain.image_views,
-        swapchain.extent,
-        render_pass.handle,
-        device.handle,
-        gpa,
     );
     const command_pool = try CommandPool.create(
         device.handle,
@@ -126,13 +141,14 @@ pub fn init(app: *App, gpa: Allocator) !void {
     const texture = try createTextureImage(
         &raw_image,
         device.handle,
-        physical_device.mem_properties,
+        physical_device.mem_props,
         command_pool.handle,
         device.graphics_queue,
     );
     const texture_view = try createImageView(
         texture.handle,
         c.VK_FORMAT_R8G8B8A8_SRGB,
+        c.VK_IMAGE_ASPECT_COLOR_BIT,
         device.handle,
     );
     const texture_sampler = try createTextureSampler(device.handle, physical_device.properties);
@@ -141,16 +157,40 @@ pub fn init(app: *App, gpa: Allocator) !void {
         &vertices,
         c.VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
         device.handle,
-        physical_device.mem_properties,
+        physical_device.mem_props,
         command_pool.handle,
         device.graphics_queue,
+    );
+    const depth_image = try Image.create(
+        swapchain.extent.width,
+        swapchain.extent.height,
+        depth_format,
+        c.VK_IMAGE_TILING_OPTIMAL,
+        c.VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT,
+        c.VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
+        device.handle,
+        physical_device.mem_props,
+    );
+    const depth_view = try createImageView(
+        depth_image.handle,
+        depth_format,
+        c.VK_IMAGE_ASPECT_DEPTH_BIT,
+        device.handle,
+    );
+    const frame_buffers = try createFrameBuffers(
+        swapchain.image_views,
+        depth_view,
+        swapchain.extent,
+        render_pass.handle,
+        device.handle,
+        gpa,
     );
     const index_buffer = try createDeviceLocalBuffer(
         u16,
         &indices,
         c.VK_BUFFER_USAGE_INDEX_BUFFER_BIT,
         device.handle,
-        physical_device.mem_properties,
+        physical_device.mem_props,
         command_pool.handle,
         device.graphics_queue,
     );
@@ -160,7 +200,7 @@ pub fn init(app: *App, gpa: Allocator) !void {
         &uniform_buffers,
         &uniform_buffers_mapped,
         device.handle,
-        physical_device.mem_properties,
+        physical_device.mem_props,
     );
     const descriptor_pool = try createDescriptorPool(device.handle);
     const descriptor_sets = try createDescriptorSets(
@@ -195,6 +235,9 @@ pub fn init(app: *App, gpa: Allocator) !void {
         .graphics_pipeline = graphics_pipeline,
         .frame_buffers = frame_buffers,
         .command_pool = command_pool,
+        .depth_format = depth_format,
+        .depth_image = depth_image,
+        .depth_view = depth_view,
         .texture = texture,
         .texture_view = texture_view,
         .texture_sampler = texture_sampler,
@@ -228,6 +271,8 @@ pub fn deinit(app: *const App) void {
         c.vkUnmapMemory(device, uniform_buffer.memory);
         uniform_buffer.destroy(device);
     }
+    app.depth_image.destroy(device);
+    c.vkDestroyImageView(device, app.depth_view, null);
     app.index_buffer.destroy(device);
     app.vertex_buffer.destroy(device);
     app.texture.destroy(device);
@@ -338,7 +383,10 @@ fn recordCommandBuffer(app: *const App, image_index: u32) !void {
         return error.VKBeginCommandBufferFailed;
     }
 
-    const clear_color = c.VkClearValue{ .color = .{ .float32 = .{0} ** 4 } };
+    const clear_values = [2]c.VkClearValue{
+        .{ .color = .{ .float32 = .{0} ** 4 } },
+        .{ .depthStencil = c.VkClearDepthStencilValue{ .depth = 1, .stencil = 0 } },
+    };
 
     const render_pass_info = c.VkRenderPassBeginInfo{
         .sType = c.VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO,
@@ -348,8 +396,8 @@ fn recordCommandBuffer(app: *const App, image_index: u32) !void {
             .offset = .{ .x = 0, .y = 0 },
             .extent = app.swapchain.extent,
         },
-        .clearValueCount = 1,
-        .pClearValues = &clear_color,
+        .clearValueCount = clear_values.len,
+        .pClearValues = &clear_values,
     };
 
     c.vkCmdBeginRenderPass(cmd_buffer, &render_pass_info, c.VK_SUBPASS_CONTENTS_INLINE);
@@ -418,8 +466,28 @@ fn recreateSwapChain(app: *App) !void {
         app.gpa,
     );
 
+    app.depth_image.destroy(app.device.handle);
+    c.vkDestroyImageView(app.device.handle, app.depth_view, null);
+    app.depth_image = try Image.create(
+        app.swapchain.extent.width,
+        app.swapchain.extent.height,
+        app.depth_format,
+        c.VK_IMAGE_TILING_OPTIMAL,
+        c.VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT,
+        c.VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
+        app.device.handle,
+        app.physical_device.mem_props,
+    );
+    app.depth_view = try createImageView(
+        app.depth_image.handle,
+        app.depth_format,
+        c.VK_IMAGE_ASPECT_DEPTH_BIT,
+        app.device.handle,
+    );
+
     app.frame_buffers = try createFrameBuffers(
         app.swapchain.image_views,
+        app.depth_view,
         app.swapchain.extent,
         app.render_pass.handle,
         app.device.handle,
@@ -489,6 +557,7 @@ fn createDescriptorSetLayout(device: c.VkDevice) !c.VkDescriptorSetLayout {
 
 fn createFrameBuffers(
     image_views: []const c.VkImageView,
+    depth_view: c.VkImageView,
     extent: c.VkExtent2D,
     render_pass: c.VkRenderPass,
     device: c.VkDevice,
@@ -497,11 +566,15 @@ fn createFrameBuffers(
     const frame_buffers = try gpa.alloc(c.VkFramebuffer, image_views.len);
 
     for (image_views, frame_buffers) |image_view, *frame_buffer| {
+        const attachments = [_]c.VkImageView{
+            image_view,
+            depth_view,
+        };
         const frame_buffer_info = c.VkFramebufferCreateInfo{
             .sType = c.VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO,
             .renderPass = render_pass,
-            .attachmentCount = 1,
-            .pAttachments = &image_view,
+            .attachmentCount = attachments.len,
+            .pAttachments = &attachments,
             .width = extent.width,
             .height = extent.height,
             .layers = 1,
@@ -526,7 +599,7 @@ fn createDeviceLocalBuffer(
     data: []const T,
     usage: c.VkBufferUsageFlags,
     device: c.VkDevice,
-    device_properties: c.VkPhysicalDeviceMemoryProperties,
+    device_mem_props: c.VkPhysicalDeviceMemoryProperties,
     command_pool: c.VkCommandPool,
     transfer_queue: c.VkQueue,
 ) !Buffer {
@@ -536,7 +609,7 @@ fn createDeviceLocalBuffer(
         c.VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
         c.VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | c.VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
         device,
-        device_properties,
+        device_mem_props,
     );
     defer staging_buffer.destroy(device);
 
@@ -550,7 +623,7 @@ fn createDeviceLocalBuffer(
         usage | c.VK_IMAGE_USAGE_TRANSFER_DST_BIT,
         c.VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
         device,
-        device_properties,
+        device_mem_props,
     );
 
     copyBuffer(
@@ -583,7 +656,7 @@ fn copyBuffer(
 fn createTextureImage(
     raw_image: []const u8,
     device: c.VkDevice,
-    device_properties: c.VkPhysicalDeviceMemoryProperties,
+    device_mem_props: c.VkPhysicalDeviceMemoryProperties,
     command_pool: c.VkCommandPool,
     queue: c.VkQueue,
 ) !Image {
@@ -607,7 +680,7 @@ fn createTextureImage(
         c.VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
         c.VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | c.VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
         device,
-        device_properties,
+        device_mem_props,
     );
     defer staging_buffer.destroy(device);
 
@@ -626,7 +699,7 @@ fn createTextureImage(
         c.VK_IMAGE_USAGE_TRANSFER_DST_BIT | c.VK_IMAGE_USAGE_SAMPLED_BIT,
         c.VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
         device,
-        device_properties,
+        device_mem_props,
     );
 
     transitionImageLayout(
@@ -841,7 +914,7 @@ fn createUniformBuffers(
     uniform_buffers: []Buffer,
     uniform_buffers_mapped: [][*]UniformBufferObject,
     device: c.VkDevice,
-    device_properties: c.VkPhysicalDeviceMemoryProperties,
+    device_mem_props: c.VkPhysicalDeviceMemoryProperties,
 ) !void {
     const buffer_size = @sizeOf(UniformBufferObject);
 
@@ -851,7 +924,7 @@ fn createUniformBuffers(
             c.VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
             c.VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | c.VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
             device,
-            device_properties,
+            device_mem_props,
         );
 
         _ = c.vkMapMemory(device, buffer.memory, 0, buffer_size, 0, @ptrCast(mapped));

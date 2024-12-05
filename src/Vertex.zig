@@ -2,7 +2,7 @@ const Vertex = @This();
 
 const c = @import("c.zig");
 
-pos: [2]f32,
+pos: [3]f32,
 color: [3]f32,
 tex_coord: [2]f32,
 
@@ -17,7 +17,7 @@ pub const attribute_descriptions = [3]c.VkVertexInputAttributeDescription{
     c.VkVertexInputAttributeDescription{
         .binding = 0,
         .location = 0,
-        .format = c.VK_FORMAT_R32G32_SFLOAT,
+        .format = c.VK_FORMAT_R32G32B32_SFLOAT,
         .offset = @offsetOf(Vertex, "pos"),
     },
     // color attribute

@@ -42,8 +42,8 @@ pub fn perspective(fovy: f32, aspect: f32, znear: f32, zfar: f32) Matrix {
     return Matrix{
         .{ 1 / (aspect * tan_half_fovy), 0, 0, 0 },
         .{ 0, 1 / tan_half_fovy, 0, 0 },
-        .{ 0, 0, -(zfar + znear) / (zfar - znear), -1 },
-        .{ 0, 0, -(2 * zfar * znear) / (zfar - znear), 1 },
+        .{ 0, 0, zfar / (znear - zfar), -1 },
+        .{ 0, 0, -(zfar * znear) / (zfar - znear), 1 },
     };
 }
 

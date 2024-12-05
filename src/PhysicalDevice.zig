@@ -6,9 +6,11 @@ const c = @import("c.zig");
 const Allocator = std.mem.Allocator;
 
 handle: c.VkPhysicalDevice,
+
+// TODO: extract short-lived metadata into separate struct.
 queue_families: QueueFamilyIndices,
 swapchain_support: SwapChainSupport,
-mem_properties: c.VkPhysicalDeviceMemoryProperties,
+mem_props: c.VkPhysicalDeviceMemoryProperties,
 properties: c.VkPhysicalDeviceProperties,
 
 pub const QueueFamilyIndices = struct {
@@ -56,8 +58,8 @@ pub fn selectAndCreate(
         c.vkGetPhysicalDeviceFeatures(device, &features);
         if (features.samplerAnisotropy == c.VK_FALSE) continue;
 
-        var mem_properties: c.VkPhysicalDeviceMemoryProperties = undefined;
-        c.vkGetPhysicalDeviceMemoryProperties(device, &mem_properties);
+        var mem_props: c.VkPhysicalDeviceMemoryProperties = undefined;
+        c.vkGetPhysicalDeviceMemoryProperties(device, &mem_props);
 
         var properties: c.VkPhysicalDeviceProperties = undefined;
         c.vkGetPhysicalDeviceProperties(device, &properties);
@@ -66,8 +68,8 @@ pub fn selectAndCreate(
             .handle = device,
             .queue_families = indices,
             .swapchain_support = swapchain_support,
-            .mem_properties = mem_properties,
             .properties = properties,
+            .mem_props = mem_props,
         };
     }
 
@@ -75,17 +77,36 @@ pub fn selectAndCreate(
 }
 
 pub fn findMemoryType(
-    device_properties: c.VkPhysicalDeviceMemoryProperties,
+    mem_props: c.VkPhysicalDeviceMemoryProperties,
     type_filter: u32,
     properties: c.VkMemoryPropertyFlags,
 ) ?u32 {
-    for (device_properties.memoryTypes[0..device_properties.memoryTypeCount], 0..) |mem_type, i| {
+    for (mem_props.memoryTypes[0..mem_props.memoryTypeCount], 0..) |mem_type, i| {
         if (((type_filter & (@as(u32, 1) << @intCast(i))) != 0) and
             (mem_type.propertyFlags & properties) == properties)
         {
             return @intCast(i);
         }
     }
+    return null;
+}
+
+pub fn findSupportedFormat(
+    device: c.VkPhysicalDevice,
+    candidates: []const c.VkFormat,
+    tiling: c.VkImageTiling,
+    features: c.VkFormatFeatureFlags,
+) ?c.VkFormat {
+    for (candidates) |format| {
+        var props: c.VkFormatProperties = undefined;
+        c.vkGetPhysicalDeviceFormatProperties(device, format, &props);
+        if (tiling == c.VK_IMAGE_TILING_LINEAR and props.linearTilingFeatures & features == features or
+            tiling == c.VK_IMAGE_TILING_OPTIMAL and props.optimalTilingFeatures & features == features)
+        {
+            return format;
+        }
+    }
+
     return null;
 }
 

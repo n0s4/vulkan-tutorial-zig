@@ -78,7 +78,7 @@ pub fn create(
 
     const image_views = try allocator.alloc(c.VkImageView, actual_image_count);
     for (images, image_views) |image, *image_view| {
-        image_view.* = try createImageView(image, format.format, device);
+        image_view.* = try createImageView(image, format.format, c.VK_IMAGE_ASPECT_COLOR_BIT, device);
     }
 
     return SwapChain{
