@@ -26,8 +26,8 @@ pub fn build(b: *std.Build) void {
     exe.linkSystemLibrary("glfw");
     exe.linkSystemLibrary("vulkan");
 
-    exe.addIncludePath(b.path("stb_image"));
-    exe.addCSourceFile(.{ .file = b.path("stb_image/stub.c") });
+    exe.addIncludePath(b.path("deps/stb/"));
+    exe.addCSourceFile(.{ .file = b.path("src/stb_image_stub.c") });
 
     exe.root_module.addAnonymousImport(
         "texture.jpg",
