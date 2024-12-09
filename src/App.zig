@@ -21,22 +21,6 @@ const createImageView = @import("image_view.zig").create;
 
 const Matrix = math.Matrix;
 
-const vertices = [_]Vertex{
-    .{ .pos = .{ -0.5, -0.5, 0 }, .color = .{ 1, 0, 0 }, .tex_coord = .{ 1, 0 } },
-    .{ .pos = .{ 0.5, -0.5, 0 }, .color = .{ 0, 1, 0 }, .tex_coord = .{ 0, 0 } },
-    .{ .pos = .{ 0.5, 0.5, 0 }, .color = .{ 0, 0, 1 }, .tex_coord = .{ 0, 1 } },
-    .{ .pos = .{ -0.5, 0.5, 0 }, .color = .{ 1, 1, 1 }, .tex_coord = .{ 1, 1 } },
-
-    .{ .pos = .{ -0.5, -0.5, -0.5 }, .color = .{ 1, 0, 0 }, .tex_coord = .{ 1, 0 } },
-    .{ .pos = .{ 0.5, -0.5, -0.5 }, .color = .{ 0, 1, 0 }, .tex_coord = .{ 0, 0 } },
-    .{ .pos = .{ 0.5, 0.5, -0.5 }, .color = .{ 0, 0, 1 }, .tex_coord = .{ 0, 1 } },
-    .{ .pos = .{ -0.5, 0.5, -0.5 }, .color = .{ 1, 1, 1 }, .tex_coord = .{ 1, 1 } },
-};
-
-const indices =
-    [6]u16{ 0, 1, 2, 2, 3, 0 } ++
-    [6]u16{ 4, 5, 6, 6, 7, 4 };
-
 const max_frames_in_flight = 2;
 
 const enable_validation_layers = @import("builtin").mode == .Debug;
@@ -75,6 +59,8 @@ texture_sampler: c.VkSampler,
 depth_format: c.VkFormat,
 depth_image: Image,
 depth_view: c.VkImageView,
+vertices: std.ArrayListUnmanaged(Vertex),
+indices: std.ArrayListUnmanaged(u32),
 vertex_buffer: Buffer,
 index_buffer: Buffer,
 image_available_semaphores: [max_frames_in_flight]c.VkSemaphore,
@@ -137,7 +123,7 @@ pub fn init(app: *App, gpa: Allocator) !void {
         max_frames_in_flight,
         gpa,
     );
-    const raw_image = @embedFile("texture.jpg").*;
+    const raw_image = @embedFile("viking_room.png").*;
     const texture = try createTextureImage(
         &raw_image,
         device.handle,
@@ -152,9 +138,14 @@ pub fn init(app: *App, gpa: Allocator) !void {
         device.handle,
     );
     const texture_sampler = try createTextureSampler(device.handle, physical_device.properties);
+    var vertices = std.ArrayListUnmanaged(Vertex).empty;
+    var indices = std.ArrayListUnmanaged(u32).empty;
+    try loadModel(&vertices, &indices, gpa);
+    std.log.info("model vertex count: {d}", .{vertices.items.len});
+
     const vertex_buffer = try createDeviceLocalBuffer(
         Vertex,
-        &vertices,
+        vertices.items,
         c.VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
         device.handle,
         physical_device.mem_props,
@@ -186,8 +177,8 @@ pub fn init(app: *App, gpa: Allocator) !void {
         gpa,
     );
     const index_buffer = try createDeviceLocalBuffer(
-        u16,
-        &indices,
+        u32,
+        indices.items,
         c.VK_BUFFER_USAGE_INDEX_BUFFER_BIT,
         device.handle,
         physical_device.mem_props,
@@ -241,6 +232,8 @@ pub fn init(app: *App, gpa: Allocator) !void {
         .texture = texture,
         .texture_view = texture_view,
         .texture_sampler = texture_sampler,
+        .vertices = vertices,
+        .indices = indices,
         .vertex_buffer = vertex_buffer,
         .index_buffer = index_buffer,
         .uniform_buffers = uniform_buffers,
@@ -254,7 +247,7 @@ pub fn init(app: *App, gpa: Allocator) !void {
     };
 }
 
-pub fn deinit(app: *const App) void {
+pub fn deinit(app: *App) void {
     const device = app.device.handle;
     const gpa = app.gpa;
     for (
@@ -273,6 +266,8 @@ pub fn deinit(app: *const App) void {
     }
     app.depth_image.destroy(device);
     c.vkDestroyImageView(device, app.depth_view, null);
+    app.vertices.deinit(gpa);
+    app.indices.deinit(gpa);
     app.index_buffer.destroy(device);
     app.vertex_buffer.destroy(device);
     app.texture.destroy(device);
@@ -422,7 +417,7 @@ fn recordCommandBuffer(app: *const App, image_index: u32) !void {
 
     c.vkCmdBindVertexBuffers(cmd_buffer, 0, 1, &app.vertex_buffer.handle, &@as(u64, 0));
 
-    c.vkCmdBindIndexBuffer(cmd_buffer, app.index_buffer.handle, 0, c.VK_INDEX_TYPE_UINT16);
+    c.vkCmdBindIndexBuffer(cmd_buffer, app.index_buffer.handle, 0, c.VK_INDEX_TYPE_UINT32);
 
     c.vkCmdBindDescriptorSets(
         cmd_buffer,
@@ -435,7 +430,7 @@ fn recordCommandBuffer(app: *const App, image_index: u32) !void {
         null,
     );
 
-    c.vkCmdDrawIndexed(cmd_buffer, indices.len, 1, 0, 0, 0);
+    c.vkCmdDrawIndexed(cmd_buffer, @intCast(app.indices.items.len), 1, 0, 0, 0);
 
     c.vkCmdEndRenderPass(cmd_buffer);
 
@@ -592,6 +587,76 @@ fn destroyFrameBuffers(framebuffers: []const c.VkFramebuffer, device: c.VkDevice
         c.vkDestroyFramebuffer(device, framebuffer, null);
     }
     gpa.free(framebuffers);
+}
+
+fn loadModel(
+    vertices: *std.ArrayListUnmanaged(Vertex),
+    indices: *std.ArrayListUnmanaged(u32),
+    gpa: Allocator,
+) !void {
+    var attrib: c.tinyobj_attrib_t = undefined;
+    var shapes: [*c]c.tinyobj_shape_t = undefined;
+    var shapes_len: usize = undefined;
+    var materials: [*c]c.tinyobj_material_t = undefined;
+    var materials_len: usize = undefined;
+
+    if (c.tinyobj_parse_obj(
+        &attrib,
+        &shapes,
+        &shapes_len,
+        &materials,
+        &materials_len,
+        "", // file name won't be used since our custom reader just returns our embedded obj file.
+        &tinyObjFileReaderCallback,
+        null,
+        c.TINYOBJ_FLAG_TRIANGULATE,
+    ) != 0) {
+        return error.TinyObjParseObjFailed;
+    }
+
+    var vertex_indices = std.HashMap(Vertex, u32, Vertex.HashContext, 80).init(gpa);
+    defer vertex_indices.deinit();
+
+    for (shapes[0..shapes_len]) |shape| {
+        for (attrib.faces[shape.face_offset .. shape.face_offset + shape.length * 3]) |index| {
+            const v_idx: usize = @intCast(index.v_idx);
+            const vt_idx: usize = @intCast(index.vt_idx);
+            const vertex = Vertex{
+                .pos = .{
+                    attrib.vertices[3 * v_idx + 0],
+                    attrib.vertices[3 * v_idx + 1],
+                    attrib.vertices[3 * v_idx + 2],
+                },
+                .tex_coord = .{
+                    attrib.texcoords[2 * vt_idx + 0],
+                    1 - attrib.texcoords[2 * vt_idx + 1],
+                },
+                .color = .{ 1, 1, 1 },
+            };
+
+            const gop = try vertex_indices.getOrPut(vertex);
+            if (!gop.found_existing) {
+                gop.value_ptr.* = @intCast(vertices.items.len);
+                try vertices.append(gpa, vertex);
+            }
+            try indices.append(gpa, gop.value_ptr.*);
+        }
+    }
+}
+
+/// tinyobjloader_c lets us pass a custom callback for reading a file path to get the contents,
+/// which we use to cheat by ignoring the file path and giving it our pre-embedded file contents.
+fn tinyObjFileReaderCallback(
+    _: ?*anyopaque,
+    _: [*c]const u8,
+    _: c_int,
+    _: [*c]const u8,
+    out_buf: [*c][*c]u8,
+    out_len: [*c]usize,
+) callconv(.c) void {
+    const obj_file = @embedFile("viking_room.obj");
+    out_buf.* = @constCast(@ptrCast(obj_file));
+    out_len.* = obj_file.len;
 }
 
 fn createDeviceLocalBuffer(

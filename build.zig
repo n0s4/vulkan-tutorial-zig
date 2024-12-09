@@ -27,11 +27,16 @@ pub fn build(b: *std.Build) void {
     exe.linkSystemLibrary("vulkan");
 
     exe.addIncludePath(b.path("deps/stb/"));
-    exe.addCSourceFile(.{ .file = b.path("src/stb_image_stub.c") });
+    exe.addIncludePath(b.path("deps/tinyobjloader-c/"));
+    exe.addCSourceFile(.{ .file = b.path("deps/deps.c") });
 
     exe.root_module.addAnonymousImport(
-        "texture.jpg",
-        .{ .root_source_file = b.path("assets/texture.jpg") },
+        "viking_room.obj",
+        .{ .root_source_file = b.path("assets/viking_room.obj") },
+    );
+    exe.root_module.addAnonymousImport(
+        "viking_room.png",
+        .{ .root_source_file = b.path("assets/viking_room.png") },
     );
 
     const shader_step = createShaderStep(b);

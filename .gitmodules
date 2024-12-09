@@ -1,3 +1,6 @@
 [submodule "deps/stb"]
 	path = deps/stb
 	url = https://github.com/nothings/stb
+[submodule "deps/tinyobjloader-c"]
+	path = deps/tinyobjloader-c
+	url = https://github.com/syoyo/tinyobjloader-c
