@@ -1,7 +1,7 @@
 const std = @import("std");
 const c = @import("c.zig");
 
-pub fn create(image: c.VkImage, format: c.VkFormat, aspect_flags: c.VkImageAspectFlags, device: c.VkDevice) !c.VkImageView {
+pub fn create(image: c.VkImage, format: c.VkFormat, aspect_flags: c.VkImageAspectFlags, mip_levels: u32, device: c.VkDevice) !c.VkImageView {
     const view_info = c.VkImageViewCreateInfo{
         .sType = c.VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
         .image = image,
@@ -16,7 +16,7 @@ pub fn create(image: c.VkImage, format: c.VkFormat, aspect_flags: c.VkImageAspec
         .subresourceRange = .{
             .aspectMask = aspect_flags,
             .baseMipLevel = 0,
-            .levelCount = 1,
+            .levelCount = mip_levels,
             .baseArrayLayer = 0,
             .layerCount = 1,
         },
