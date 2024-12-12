@@ -2,7 +2,7 @@
 
 Tracking my progress through the [vulkan tutorial](https://docs.vulkan.org/tutorial/latest/) with [Zig](https://ziglang.org/).
 
-Currently, I have just completed the "Loading Models" chapter.
+Currently, I have just completed the "Generating Mipmaps" chapter.
 
 ![application screenshot](screenshot.png)
 
