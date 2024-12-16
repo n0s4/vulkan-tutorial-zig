@@ -9,6 +9,7 @@ handle: c.VkPipeline,
 layout: c.VkPipelineLayout,
 
 pub fn create(
+    sample_count: c.VkSampleCountFlagBits,
     device: c.VkDevice,
     render_pass: c.VkRenderPass,
     descriptor_set_layout: c.VkDescriptorSetLayout,
@@ -98,7 +99,7 @@ pub fn create(
     const multisampling = c.VkPipelineMultisampleStateCreateInfo{
         .sType = c.VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO,
         .sampleShadingEnable = c.VK_FALSE,
-        .rasterizationSamples = c.VK_SAMPLE_COUNT_1_BIT,
+        .rasterizationSamples = sample_count,
     };
 
     const depth_stencil = c.VkPipelineDepthStencilStateCreateInfo{

@@ -52,6 +52,8 @@ swapchain: SwapChain,
 render_pass: RenderPass,
 graphics_pipeline: GraphicsPipeline,
 frame_buffers: []const c.VkFramebuffer = &.{},
+color_image: Image,
+color_image_view: c.VkImageView,
 command_pool: CommandPool,
 mip_levels: u32,
 texture: Image,
@@ -110,9 +112,15 @@ pub fn init(app: *App, gpa: Allocator) !void {
     ) orelse {
         return error.NoSuitableDepthFormat;
     };
-    const render_pass = try RenderPass.create(device.handle, swapchain.format, depth_format);
+    const render_pass = try RenderPass.create(
+        physical_device.max_msaa_sample_count,
+        device.handle,
+        swapchain.format,
+        depth_format,
+    );
     const descriptor_set_layout = try createDescriptorSetLayout(device.handle);
     const graphics_pipeline = try GraphicsPipeline.create(
+        physical_device.max_msaa_sample_count,
         device.handle,
         render_pass.handle,
         descriptor_set_layout,
@@ -164,6 +172,7 @@ pub fn init(app: *App, gpa: Allocator) !void {
         swapchain.extent.width,
         swapchain.extent.height,
         1,
+        physical_device.max_msaa_sample_count,
         depth_format,
         c.VK_IMAGE_TILING_OPTIMAL,
         c.VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT,
@@ -178,9 +187,29 @@ pub fn init(app: *App, gpa: Allocator) !void {
         1,
         device.handle,
     );
+    const color_image = try Image.create(
+        swapchain.extent.width,
+        swapchain.extent.height,
+        1,
+        physical_device.max_msaa_sample_count,
+        swapchain.format,
+        c.VK_IMAGE_TILING_OPTIMAL,
+        c.VK_IMAGE_USAGE_TRANSIENT_ATTACHMENT_BIT | c.VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT,
+        c.VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
+        device.handle,
+        physical_device.mem_props,
+    );
+    const color_image_view = try createImageView(
+        color_image.handle,
+        swapchain.format,
+        c.VK_IMAGE_ASPECT_COLOR_BIT,
+        1,
+        device.handle,
+    );
     const frame_buffers = try createFrameBuffers(
         swapchain.image_views,
         depth_view,
+        color_image_view,
         swapchain.extent,
         render_pass.handle,
         device.handle,
@@ -235,6 +264,8 @@ pub fn init(app: *App, gpa: Allocator) !void {
         .descriptor_set_layout = descriptor_set_layout,
         .graphics_pipeline = graphics_pipeline,
         .frame_buffers = frame_buffers,
+        .color_image = color_image,
+        .color_image_view = color_image_view,
         .command_pool = command_pool,
         .depth_format = depth_format,
         .depth_image = depth_image,
@@ -275,6 +306,8 @@ pub fn deinit(app: *App) void {
         c.vkUnmapMemory(device, uniform_buffer.memory);
         uniform_buffer.destroy(device);
     }
+    app.color_image.destroy(device);
+    c.vkDestroyImageView(device, app.color_image_view, null);
     app.depth_image.destroy(device);
     c.vkDestroyImageView(device, app.depth_view, null);
     app.vertices.deinit(gpa);
@@ -472,12 +505,35 @@ fn recreateSwapChain(app: *App) !void {
         app.gpa,
     );
 
+    app.color_image.destroy(app.device.handle);
+    c.vkDestroyImageView(app.device.handle, app.color_image_view, null);
+    app.color_image = try Image.create(
+        app.swapchain.extent.width,
+        app.swapchain.extent.height,
+        1,
+        app.physical_device.max_msaa_sample_count,
+        app.swapchain.format,
+        c.VK_IMAGE_TILING_OPTIMAL,
+        c.VK_IMAGE_USAGE_TRANSIENT_ATTACHMENT_BIT | c.VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT,
+        c.VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
+        app.device.handle,
+        app.physical_device.mem_props,
+    );
+    app.color_image_view = try createImageView(
+        app.color_image.handle,
+        app.swapchain.format,
+        c.VK_IMAGE_ASPECT_COLOR_BIT,
+        1,
+        app.device.handle,
+    );
+
     app.depth_image.destroy(app.device.handle);
     c.vkDestroyImageView(app.device.handle, app.depth_view, null);
     app.depth_image = try Image.create(
         app.swapchain.extent.width,
         app.swapchain.extent.height,
         1,
+        app.physical_device.max_msaa_sample_count,
         app.depth_format,
         c.VK_IMAGE_TILING_OPTIMAL,
         c.VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT,
@@ -496,6 +552,7 @@ fn recreateSwapChain(app: *App) !void {
     app.frame_buffers = try createFrameBuffers(
         app.swapchain.image_views,
         app.depth_view,
+        app.color_image_view,
         app.swapchain.extent,
         app.render_pass.handle,
         app.device.handle,
@@ -566,6 +623,7 @@ fn createDescriptorSetLayout(device: c.VkDevice) !c.VkDescriptorSetLayout {
 fn createFrameBuffers(
     image_views: []const c.VkImageView,
     depth_view: c.VkImageView,
+    color_view: c.VkImageView,
     extent: c.VkExtent2D,
     render_pass: c.VkRenderPass,
     device: c.VkDevice,
@@ -575,8 +633,9 @@ fn createFrameBuffers(
 
     for (image_views, frame_buffers) |image_view, *frame_buffer| {
         const attachments = [_]c.VkImageView{
-            image_view,
+            color_view,
             depth_view,
+            image_view,
         };
         const frame_buffer_info = c.VkFramebufferCreateInfo{
             .sType = c.VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO,
@@ -776,6 +835,7 @@ fn createTextureImage(
         tex_width,
         tex_height,
         mip_levels.*,
+        c.VK_SAMPLE_COUNT_1_BIT,
         c.VK_FORMAT_R8G8B8A8_SRGB,
         c.VK_IMAGE_TILING_OPTIMAL,
         c.VK_IMAGE_USAGE_TRANSFER_SRC_BIT |
@@ -1124,7 +1184,7 @@ fn createTextureSampler(
         .compareOp = c.VK_COMPARE_OP_ALWAYS,
         .mipmapMode = c.VK_SAMPLER_MIPMAP_MODE_LINEAR,
         .mipLodBias = 0,
-        .minLod = 4,
+        .minLod = 0,
         .maxLod = c.VK_LOD_CLAMP_NONE,
     };
 

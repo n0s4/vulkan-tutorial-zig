@@ -12,6 +12,7 @@ pub fn create(
     width: u32,
     height: u32,
     mip_levels: u32,
+    sample_count: c.VkSampleCountFlagBits,
     format: c.VkFormat,
     tiling: c.VkImageTiling,
     usage: c.VkImageUsageFlags,
@@ -33,7 +34,7 @@ pub fn create(
         .tiling = tiling,
         .initialLayout = c.VK_IMAGE_LAYOUT_UNDEFINED,
         .usage = usage,
-        .samples = c.VK_SAMPLE_COUNT_1_BIT,
+        .samples = sample_count,
         .sharingMode = c.VK_SHARING_MODE_EXCLUSIVE,
     };
 

@@ -12,6 +12,7 @@ queue_families: QueueFamilyIndices,
 swapchain_support: SwapChainSupport,
 mem_props: c.VkPhysicalDeviceMemoryProperties,
 properties: c.VkPhysicalDeviceProperties,
+max_msaa_sample_count: c.VkSampleCountFlagBits,
 
 pub const QueueFamilyIndices = struct {
     graphics_index: u32,
@@ -64,12 +65,15 @@ pub fn selectAndCreate(
         var properties: c.VkPhysicalDeviceProperties = undefined;
         c.vkGetPhysicalDeviceProperties(device, &properties);
 
+        const max_sample_count = getMaxUsableSampleCount(properties);
+
         return PhysicalDevice{
             .handle = device,
             .queue_families = indices,
             .swapchain_support = swapchain_support,
             .properties = properties,
             .mem_props = mem_props,
+            .max_msaa_sample_count = max_sample_count,
         };
     }
 
@@ -206,4 +210,23 @@ fn querySwapChainSupport(
         .formats = formats,
         .present_modes = present_modes,
     };
+}
+
+fn getMaxUsableSampleCount(dev_props: c.VkPhysicalDeviceProperties) c.VkSampleCountFlagBits {
+    const counts =
+        dev_props.limits.framebufferColorSampleCounts &
+        dev_props.limits.framebufferDepthSampleCounts;
+
+    inline for ([_]c.VkSampleCountFlagBits{
+        c.VK_SAMPLE_COUNT_64_BIT,
+        c.VK_SAMPLE_COUNT_32_BIT,
+        c.VK_SAMPLE_COUNT_16_BIT,
+        c.VK_SAMPLE_COUNT_8_BIT,
+        c.VK_SAMPLE_COUNT_4_BIT,
+        c.VK_SAMPLE_COUNT_2_BIT,
+    }) |count| {
+        if (counts & count != 0) return count;
+    }
+
+    return c.VK_SAMPLE_COUNT_1_BIT;
 }
